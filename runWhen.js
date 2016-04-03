@@ -1,94 +1,125 @@
 /*
-Title:    runWhen
-Auther:   James R. Brown
-Version:  1.0
-License:
-  The MIT License (MIT)
-    Copyright (c) 2013 James R. Brown
-	
-	Permission is hereby granted, free of charge, to any person obtaining 
-	a copy of this software and associated documentation files (the "Software"), 
-	to deal in the Software without restriction, including without limitation 
-	the rights to use, copy, modify, merge, publish, distribute, sublicense, 
-	and/or sell copies of the Software, and to permit persons to whom the Software 
-	is furnished to do so, subject to the following conditions:
-	
-	The above copyright notice and this permission notice shall be included in 
-	all copies or substantial portions of the Software.
-	
-	THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, 
-	INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A 
-	PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT 
-	HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF 
-	CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE 
-	OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+Title: Scrape State
+Author: James R Brown
+Date: 4.2.16
 
+Scrape State is a utility to help scrape pages with PhantomJS.
+The idea is to monitor events, and then execute the next function
+when events stop coming in.  
 
+Usage:
+The user simply adds functions to Scrape Stage and then kicks off
+the process with "start".
+
+Setup:
+To set this up, be sure to use PhantomJS's events to notify
+Scrape State of events and to use PhantomJS's "onLoadStarted"
+and "onLoadFinished" to notify Scrape State of page loads.
 */
 
-
-
-var runWhen = {
-    boolTestCondition: new Object,
-    codeToRun: new Object,
-    lengthToWait: new Object,
-    timesToTry: new Object,
-    timesTried: new Object,
-    jobIndex: 0, 
-    submitUniqueJob: function(jobName, boolTestCondition, codeToRun, lengthToWait, timesToTry){
-        //first three args required
-        if(typeof jobName == "undefined") return;
-        if(typeof boolTestCondition == "undefined") return;
-        if(typeof codeToRun == "undefined") return;
-        var job = jobName;
-        this.boolTestCondition[job] = boolTestCondition;
-        this.codeToRun[job] = codeToRun;
-        typeof lengthToWait == 'undefined' ? this.lengthToWait[job] = 10 : this.lengthToWait[job] = lengthToWait;
-        typeof timesToTry == 'undefined' ? this.timesToTry[job] = 0 : this.timesToTry[job] = timesToTry;
-        this.timesTried[job] = 0;
-        this.privateRun(job);
-    },
-    submitJob: function (boolTestCondition, codeToRun, lengthToWait, timesToTry){
-        //first two args required
-        if(typeof boolTestCondition == "undefined") return;
-        if(typeof codeToRun == "undefined") return;
-        var job = this.jobIndex++;
-        this.boolTestCondition[job] = boolTestCondition;
-        this.codeToRun[job] = codeToRun;
-        typeof lengthToWait == 'undefined' ? this.lengthToWait[job] = 10 : this.lengthToWait[job] = lengthToWait;
-        typeof timesToTry == 'undefined' ? this.timesToTry[job] = 0 : this.timesToTry[job] = timesToTry;
-        this.timesTried[job] = 0;
-        this.privateRun(job);
-    },
-    privateRun: function(job){
-        //should not be called by a user, but must be public
-        if(eval(this.boolTestCondition[job])){
-            eval(this.codeToRun[job]);
-            this.removeJob(job);
+module.exports = (function(){
+    var events = 0;                 //track events
+    var lastEventCount = 0;         //events since last evaluation
+    var started = false;            //Has Scrape State been started
+    var pageLoading = false;        //track page loads
+    var stageRunning = false;       //trank if we're in the stage process
+    var funcArray = [];             //registered functions
+    var stageOneTime = 200;         //time to wait in stage one
+    var stageTwoTime = 1000;        //time to wait in stage two
+    
+    var start = function(){
+        if(!started){
+            started = true;
+            runNextFunction();
         }else{
-            if(this.timesToTry[job] > 0){
-               if(this.timesToTry[job] > this.timesTried[job]){
-                   this.removeJob(job);
-                   return;
-               }else{
-                   this.timesTried[job]++;
-               }
-           }
-            setTimeout("runWhen.privateRun('"+job+"')", this.lengthToWait[job]);
+            console.log("Can't start Scrape State more than once!");
         }
-    },
-    removeJob: function(job){
-        //remove job
-        delete this.boolTestCondition[job];
-        delete this.codeToRun[job];
-        delete this.lengthToWait[job];
-        delete this.timesToTry[job];
-        delete this.timesTried[job];
-    },
-    terminateJobs: function(){
-        //remove all jobs
-        for(var key in this.timesToTry){
-            this.timesToTry[key] = 1;
+    };
+    
+    var pageLoadStarted = function(){
+        pageLoading = true;
+    };
+    
+    var pageLoadFinished = function(){
+        pageLoading = false;
+        stageZero();
+    };
+    
+    var stageZero = function(){
+        if(started && !pageLoading && !stageRunning){
+            stageRunning = true;
+            events = 0;
+            lastEventCount = 0;
+            stageOne();
         }
-    }
-}
+    };
+        
+    var stageOne = function(){
+        if(started && !pageLoading && stageRunning){
+            if(events === lastEventCount){
+                setTimeout(stageTwo, stageTwoTime);
+            }else{
+                lastEventCount = events;
+                setTimeout(stageOne, stageOneTime);
+            }  
+        }else{
+            stageComplete();
+        }
+              
+    };
+    
+    var stageTwo = function(){
+        if(started && !pageLoading && stageRunning){
+            if(events === lastEventCount){
+                runNextFunction();
+            }else{
+                stageOne();
+            }
+        }else{
+            stageComplete();
+        }
+        
+    };
+    
+    var runNextFunction = function(){
+        stageComplete();
+        funcArray.shift()();
+        if(!funcArray.length) started = false; //completed
+    };
+    
+    var stageComplete = function(){
+        stageRunning = false;
+    };
+    
+    var setStageOneTime = function(time){
+        stageOneTime = time;
+    };
+    
+    var setStageTwoTime = function(time){
+        stageTwoTime = time;
+    };
+    
+    var incrementEvents = function(){
+        events++;
+    };
+    
+    var addFunction = function(func){
+        if(!started){
+            funcArray.push(func);
+        }else{
+            console.log("Can't add functions once Scrape State is started!");
+        }
+    };
+    
+    
+    
+    return {
+        start: start,
+        pageLoadStarted: pageLoadStarted,
+        pageLoadFinished: pageLoadFinished,
+        incrementEvents: incrementEvents,
+        addFunction: addFunction,
+        setStageOneTime: setStageOneTime,
+        setStageTwoTime: setStageTwoTime
+    };
+})();

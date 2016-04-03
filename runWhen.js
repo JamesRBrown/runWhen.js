@@ -21,11 +21,11 @@ module.exports = (function(){
     var events = 0;                 //track events
     var lastEventCount = 0;         //events since last evaluation
     var started = false;            //Has Scrape State been started
-    var pageLoading = false;        //track page loads
-    var stageRunning = false;       //trank if we're in the stage process
+    var pageLoading = false;        //track page loading state
+    var stageRunning = false;       //track if we're in stage processing
     var funcArray = [];             //registered functions
-    var stageOneTime = 200;         //time to wait in stage one
-    var stageTwoTime = 1000;        //time to wait in stage two
+    var stageOneTime = 200;         //time to wait before stage one
+    var stageTwoTime = 1000;        //time to wait before stage two
     
     var start = function(){
         if(!started){
